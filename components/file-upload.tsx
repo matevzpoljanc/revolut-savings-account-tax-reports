@@ -20,17 +20,22 @@ import {
     parseTransactions,
     validateRevolutCSV,
     isValidCSVFile,
+    mergeTransactions,
     type FundTransactions,
 } from "@/lib/revolut-parser"
 import {
-    generateReport,
-    formatNumber,
-    calculateFundSummary,
-} from "@/lib/report-generator"
+    validateHistory,
+    matchTransactionsFIFO,
+    getMatchesForYear,
+    type HistoryValidation,
+    type MatchedSell,
+} from "@/lib/cost-basis"
+import { generateReport, formatNumber } from "@/lib/report-generator"
 import {
     getAvailableTaxForms,
     generateFullDohKDVPXML,
     generateTaxOfficeXml,
+    generateDohKDVPFromMatches,
 } from "@/lib/tax-generator"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -65,7 +70,20 @@ export function FileUpload({ taxYear }: FileUploadProps) {
         availableForms?: { kdvp: boolean; interest: boolean }
     } | null>(null)
 
-    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    // Multi-file upload state
+    const [uploadedFiles, setUploadedFiles] = useState<
+        { name: string; size: number }[]
+    >([])
+    const [allTransactions, setAllTransactions] = useState<FundTransactions[]>(
+        []
+    )
+    const [historyValidation, setHistoryValidation] =
+        useState<HistoryValidation | null>(null)
+    const [matchedSellsByFund, setMatchedSellsByFund] = useState<
+        Map<string, MatchedSell[]>
+    >(new Map())
+
+    const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const selectedFile = e.target.files?.[0]
         if (selectedFile) {
             // Validate file extension
@@ -82,7 +100,7 @@ export function FileUpload({ taxYear }: FileUploadProps) {
             // Read and validate CSV content immediately
             Papa.parse(selectedFile, {
                 header: false,
-                complete: (results) => {
+                complete: async (results) => {
                     const data = results.data as string[][]
                     const validation = validateRevolutCSV(data)
 
@@ -97,10 +115,54 @@ export function FileUpload({ taxYear }: FileUploadProps) {
                         return
                     }
 
-                    // File is valid, accept it
-                    setFile(selectedFile)
-                    setResult(null)
-                    setParsedData(null)
+                    // Parse the transactions
+                    try {
+                        const newTransactions = await parseTransactions(data)
+
+                        // Merge with existing transactions
+                        const merged = mergeTransactions(
+                            allTransactions,
+                            newTransactions
+                        )
+
+                        // Validate history completeness
+                        const historyCheck = validateHistory(merged)
+
+                        // Run FIFO matching for all transactions
+                        const matchesByFund = new Map<string, MatchedSell[]>()
+                        for (const fund of merged) {
+                            const matchResult = matchTransactionsFIFO(
+                                fund.orders
+                            )
+                            const yearMatches = getMatchesForYear(
+                                matchResult,
+                                taxYear
+                            )
+                            if (yearMatches.length > 0) {
+                                matchesByFund.set(fund.currency, yearMatches)
+                            }
+                        }
+
+                        // Update state
+                        setAllTransactions(merged)
+                        setHistoryValidation(historyCheck)
+                        setMatchedSellsByFund(matchesByFund)
+                        setUploadedFiles((prev) => [
+                            ...prev,
+                            { name: selectedFile.name, size: selectedFile.size },
+                        ])
+                        setFile(selectedFile)
+                        setResult(null)
+                        setParsedData(merged)
+                    } catch (error) {
+                        console.error("Error parsing transactions:", error)
+                        setResult({
+                            success: false,
+                            message: "Napaka pri obdelavi transakcij",
+                            details:
+                                "Datoteke ni bilo mogoče obdelati. Preverite format datoteke.",
+                        })
+                    }
                 },
                 error: () => {
                     setResult({
@@ -119,104 +181,74 @@ export function FileUpload({ taxYear }: FileUploadProps) {
     }
 
     const processFile = async () => {
-        if (!file) return
+        // Use allTransactions if available (multi-file), otherwise require file
+        if (allTransactions.length === 0 && !file) return
 
         setIsProcessing(true)
         setProgress(0)
         setResult(null)
-        setParsedData(null)
         setShowDisclaimerModal(false)
 
         try {
-            // Parse the CSV file using Papa Parse (already validated on upload)
-            Papa.parse(file, {
-                header: false, // returns an array of arrays
-                complete: async (results) => {
-                    try {
-                        // Update progress to 20%
-                        setProgress(20)
+            // Use already-merged transactions from allTransactions
+            const transactions = allTransactions
 
-                        // Parse the transactions using our custom parser
-                        const data = results.data as string[][]
-                        const transactions = await parseTransactions(data)
+            // Log the parsed transactions to the console
+            console.log("Processing transactions:", transactions)
 
-                        // Log the parsed transactions to the console
-                        console.log("Parsed transactions:", transactions)
-                        setParsedData(transactions)
+            // Update progress
+            setProgress(50)
 
-                        // Update progress to 60%
-                        setProgress(60)
+            // Generate a report from the transactions
+            await new Promise((resolve) => setTimeout(resolve, 300))
+            setProgress(80)
 
-                        // Generate a report from the transactions
-                        await new Promise((resolve) => setTimeout(resolve, 500))
-                        setProgress(80)
+            // Check which tax forms can be generated for the tax year
+            const availableForms = getAvailableTaxForms(transactions, taxYear)
 
-                        // Check which tax forms can be generated
-                        const availableForms =
-                            getAvailableTaxForms(transactions)
+            // Generate the report using the separate function
+            const reportText = generateReport(transactions)
 
-                        // Generate the report using the separate function
-                        const reportText = generateReport(transactions)
-
-                        // Create a blob for download
-                        const blob = new Blob([reportText], {
-                            type: "text/plain",
-                        })
-                        const url = URL.createObjectURL(blob)
-
-                        // Update progress to 100%
-                        setProgress(100)
-
-                        // Check if any forms are available
-                        const hasAvailableForms =
-                            availableForms.kdvp || availableForms.interest
-
-                        if (hasAvailableForms) {
-                            setResult({
-                                success: true,
-                                message:
-                                    "Davčni obrazci so bili uspešno pripravljeni!",
-                                downloadUrl: url,
-                                fileName: "davcni_obrazci_revolut.txt",
-                                availableForms,
-                            })
-                        } else {
-                            setResult({
-                                success: false,
-                                message:
-                                    "Ni bilo mogoče generirati XML datotek. V datoteki ni bilo najdenih ustreznih transakcij.",
-                                downloadUrl: url,
-                                fileName: "davcni_obrazci_revolut.txt",
-                            })
-                        }
-                    } catch (error) {
-                        console.error("Error processing transactions:", error)
-                        setResult({
-                            success: false,
-                            message:
-                                "Prišlo je do napake pri obdelavi transakcij. Format datoteke morda ni pravilen.",
-                        })
-                    } finally {
-                        setIsProcessing(false)
-                    }
-                },
-                error: (error) => {
-                    console.error("Error parsing CSV:", error)
-                    setResult({
-                        success: false,
-                        message:
-                            "Prišlo je do napake pri obdelavi datoteke. Prosimo, preverite format Excel (CSV) datoteke.",
-                    })
-                    setIsProcessing(false)
-                },
+            // Create a blob for download
+            const blob = new Blob([reportText], {
+                type: "text/plain",
             })
+            const url = URL.createObjectURL(blob)
+
+            // Update progress to 100%
+            setProgress(100)
+
+            // Check if any forms are available
+            const hasAvailableForms =
+                availableForms.kdvp || availableForms.interest
+
+            if (hasAvailableForms) {
+                setResult({
+                    success: true,
+                    message: "Davčni obrazci so bili uspešno pripravljeni!",
+                    downloadUrl: url,
+                    fileName: "davcni_obrazci_revolut.txt",
+                    availableForms,
+                })
+            } else {
+                setResult({
+                    success: false,
+                    message:
+                        "Ni bilo mogoče generirati XML datotek. V datoteki ni bilo najdenih ustreznih transakcij za leto " +
+                        taxYear +
+                        ".",
+                    downloadUrl: url,
+                    fileName: "davcni_obrazci_revolut.txt",
+                })
+            }
         } catch (error) {
-            console.error("Error processing file:", error)
+            console.error("Error processing transactions:", error)
             setResult({
                 success: false,
                 message:
-                    "Prišlo je do napake pri obdelavi datoteke. Prosimo, preverite format Excel (CSV) datoteke.",
+                    "Prišlo je do napake pri obdelavi transakcij. Format datoteke morda ni pravilen.",
             })
+        } finally {
             setIsProcessing(false)
         }
     }
@@ -229,15 +261,31 @@ export function FileUpload({ taxYear }: FileUploadProps) {
 
         // Generate the appropriate XML based on the key
         if (xmlKey === "kdvp") {
-            const fundsWithOrders = parsedData.filter(
-                (fund) => fund.orders.length > 0
-            )
-            if (fundsWithOrders.length > 0) {
-                xmlContent = generateFullDohKDVPXML(
-                    fundsWithOrders,
+            // Use FIFO-matched generation if we have matched sells
+            if (matchedSellsByFund.size > 0) {
+                // Build fund info map
+                const fundInfo = new Map<string, { isin?: string }>()
+                for (const fund of parsedData) {
+                    fundInfo.set(fund.currency, { isin: fund.isin })
+                }
+                xmlContent = generateDohKDVPFromMatches(
+                    matchedSellsByFund,
+                    fundInfo,
                     taxYear,
                     taxNumber
                 )
+            } else {
+                // Fallback to old method if no matched sells
+                const fundsWithOrders = parsedData.filter(
+                    (fund) => fund.orders.length > 0
+                )
+                if (fundsWithOrders.length > 0) {
+                    xmlContent = generateFullDohKDVPXML(
+                        fundsWithOrders,
+                        taxYear,
+                        taxNumber
+                    )
+                }
             }
         } else if (xmlKey === "interest") {
             const fundsWithInterest = parsedData.filter(
@@ -270,6 +318,10 @@ export function FileUpload({ taxYear }: FileUploadProps) {
         setResult(null)
         setParsedData(null)
         setProgress(0)
+        setUploadedFiles([])
+        setAllTransactions([])
+        setHistoryValidation(null)
+        setMatchedSellsByFund(new Map())
     }
 
     const isValidTaxNumber = (num: string) => {
@@ -327,22 +379,93 @@ export function FileUpload({ taxYear }: FileUploadProps) {
 
                     {file && !isProcessing && !result && (
                         <div className="space-y-4">
-                            <div className="flex items-center p-4 bg-muted rounded-md">
-                                <FileText className="h-6 w-6 mr-3 text-primary" />
-                                <div className="flex-1 min-w-0">
-                                    <p className="font-medium truncate">
-                                        {file.name}
+                            {/* List of uploaded files */}
+                            {uploadedFiles.length > 0 && (
+                                <div className="space-y-2">
+                                    <p className="text-sm font-medium text-muted-foreground">
+                                        Naložene datoteke:
                                     </p>
-                                    <p className="text-sm text-muted-foreground">
-                                        {(file.size / 1024).toFixed(2)} KB
-                                    </p>
+                                    {uploadedFiles.map((f, idx) => (
+                                        <div
+                                            key={idx}
+                                            className="flex items-center p-3 bg-muted rounded-md"
+                                        >
+                                            <FileText className="h-5 w-5 mr-2 text-primary" />
+                                            <div className="flex-1 min-w-0">
+                                                <p className="text-sm font-medium truncate">
+                                                    {f.name}
+                                                </p>
+                                                <p className="text-xs text-muted-foreground">
+                                                    {(f.size / 1024).toFixed(2)}{" "}
+                                                    KB
+                                                </p>
+                                            </div>
+                                            <CheckCircle2 className="h-4 w-4 text-green-600" />
+                                        </div>
+                                    ))}
                                 </div>
+                            )}
+
+                            {/* History validation warning */}
+                            {historyValidation &&
+                                !historyValidation.isComplete && (
+                                    <Alert className="bg-amber-50 border-amber-200">
+                                        <AlertCircle className="h-4 w-4 text-amber-600" />
+                                        <AlertTitle className="text-amber-800">
+                                            Manjkajo nakupi
+                                        </AlertTitle>
+                                        <AlertDescription className="text-amber-700">
+                                            <p className="mb-2">
+                                                {historyValidation.deficit
+                                                    ?.message ||
+                                                    "Za pravilno generiranje KDVP obrazca potrebujete starejše izpiske."}
+                                            </p>
+                                            <p className="text-sm">
+                                                Naložite dodatne izpiske iz
+                                                prejšnjih let, da zagotovite
+                                                popolno zgodovino transakcij.
+                                            </p>
+                                        </AlertDescription>
+                                    </Alert>
+                                )}
+
+                            {/* History complete notification */}
+                            {historyValidation &&
+                                historyValidation.isComplete && (
+                                    <Alert className="bg-green-50 border-green-200">
+                                        <CheckCircle2 className="h-4 w-4 text-green-600" />
+                                        <AlertTitle className="text-green-800">
+                                            Zgodovina transakcij je popolna
+                                        </AlertTitle>
+                                        <AlertDescription className="text-green-700">
+                                            Vsi nakupi so najdeni za vse
+                                            prodaje. Lahko nadaljujete z
+                                            generiranjem obrazcev.
+                                        </AlertDescription>
+                                    </Alert>
+                                )}
+
+                            {/* Add more files button */}
+                            <div className="border-2 border-dashed border-muted rounded-lg p-4 text-center">
+                                <input
+                                    type="file"
+                                    id="file-upload-additional"
+                                    accept=".csv"
+                                    className="hidden"
+                                    onChange={handleFileChange}
+                                />
                                 <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={resetForm}
+                                    variant="outline"
+                                    onClick={() =>
+                                        document
+                                            .getElementById(
+                                                "file-upload-additional"
+                                            )
+                                            ?.click()
+                                    }
                                 >
-                                    Odstrani
+                                    <Upload className="h-4 w-4 mr-2" />
+                                    Dodaj datoteko iz prejšnjega leta
                                 </Button>
                             </div>
 
@@ -514,163 +637,187 @@ export function FileUpload({ taxYear }: FileUploadProps) {
                                             </div>
                                         )}
 
-                                    {/* Summary section - now below XML files */}
+                                    {/* Summary section - transactions and interest */}
                                     {parsedData && parsedData.length > 0 && (
                                         <div className="bg-muted p-4 rounded-md">
                                             <h3 className="font-medium mb-3">
-                                                Povzetek obdelanih podatkov:
+                                                Povzetek za davčno leto {taxYear}
+                                                :
                                             </h3>
 
-                                            {parsedData.map((fund, index) => {
-                                                const summary =
-                                                    calculateFundSummary(fund)
+                                            {(() => {
+                                                // Calculate totals across all funds
+                                                let totalInterestEur = 0
+                                                let interestCount = 0
+
+                                                for (const fund of parsedData) {
+                                                    const taxYearInterest =
+                                                        fund.interest_payments.filter(
+                                                            (p) =>
+                                                                p.date.getFullYear() ===
+                                                                taxYear
+                                                        )
+                                                    totalInterestEur +=
+                                                        taxYearInterest.reduce(
+                                                            (sum, p) =>
+                                                                sum +
+                                                                (p.quantityInEur ||
+                                                                    0),
+                                                            0
+                                                        )
+                                                    interestCount +=
+                                                        taxYearInterest.length
+                                                }
+
+                                                // Calculate sells and buys from matched transactions
+                                                let sellCount = 0
+                                                let sellValueEur = 0
+                                                let buyCount = 0
+                                                let buyValueEur = 0
+
+                                                Array.from(
+                                                    matchedSellsByFund.values()
+                                                ).forEach((matches) => {
+                                                    matches.forEach(
+                                                        (matchedSell) => {
+                                                            sellCount++
+                                                            sellValueEur +=
+                                                                matchedSell.sell
+                                                                    .quantity *
+                                                                matchedSell.sell
+                                                                    .pricePerUnitInEur
+                                                            matchedSell.matches.forEach(
+                                                                (match) => {
+                                                                    buyCount++
+                                                                    buyValueEur +=
+                                                                        match.quantityUsed *
+                                                                        match.buy
+                                                                            .pricePerUnitInEur
+                                                                }
+                                                            )
+                                                        }
+                                                    )
+                                                })
+
                                                 const taxObligation =
-                                                    summary.totalInterestAmount *
-                                                    0.25 // 25% tax on interest
+                                                    totalInterestEur * 0.25
+
+                                                const hasTransactions =
+                                                    sellCount > 0 ||
+                                                    interestCount > 0
+
+                                                if (!hasTransactions) {
+                                                    return (
+                                                        <p className="text-muted-foreground">
+                                                            Ni transakcij za leto{" "}
+                                                            {taxYear}.
+                                                        </p>
+                                                    )
+                                                }
 
                                                 return (
-                                                    <div
-                                                        key={index}
-                                                        className="mb-4"
-                                                    >
-                                                        <h4 className="font-medium text-sm mb-2">
-                                                            Valuta:{" "}
-                                                            {fund.currency}
-                                                            {fund.isin && (
-                                                                <span className="ml-2 text-muted-foreground">
-                                                                    ISIN:{" "}
-                                                                    {fund.isin}
-                                                                </span>
-                                                            )}
-                                                        </h4>
-                                                        <div className="overflow-x-auto">
-                                                            <table className="w-full text-sm">
-                                                                <thead>
-                                                                    <tr className="bg-muted-foreground/10">
-                                                                        <th className="text-left py-2 px-3 font-medium">
-                                                                            Tip
-                                                                        </th>
-                                                                        <th className="text-right py-2 px-3 font-medium">
-                                                                            Znesek
-                                                                        </th>
-                                                                        <th className="text-right py-2 px-3 font-medium">
-                                                                            Znesek
-                                                                            (EUR)
-                                                                        </th>
-                                                                        <th className="text-right py-2 px-3 font-medium">
-                                                                            Št.
-                                                                            transakcij
-                                                                        </th>
-                                                                    </tr>
-                                                                </thead>
-                                                                <tbody>
-                                                                    <tr className="border-b border-muted-foreground/20">
-                                                                        <td className="py-2 px-3">
-                                                                            Nakupi
-                                                                        </td>
-                                                                        <td className="py-2 px-3 text-right font-bold">
-                                                                            {formatNumber(
-                                                                                summary.totalBuyAmount
-                                                                            )}{" "}
-                                                                            {
-                                                                                fund.currency
-                                                                            }
-                                                                        </td>
-                                                                        <td className="py-2 px-3 text-right font-bold">
-                                                                            {formatNumber(
-                                                                                summary.totalBuyAmountEur
-                                                                            )}{" "}
-                                                                            EUR
-                                                                        </td>
-                                                                        <td className="py-2 px-3 text-right text-muted-foreground">
-                                                                            {
-                                                                                summary
-                                                                                    .buyTransactions
-                                                                                    .length
-                                                                            }
-                                                                        </td>
-                                                                    </tr>
-                                                                    <tr className="border-b border-muted-foreground/20">
-                                                                        <td className="py-2 px-3">
-                                                                            Prodaje
-                                                                        </td>
-                                                                        <td className="py-2 px-3 text-right font-bold">
-                                                                            {formatNumber(
-                                                                                summary.totalSellAmount
-                                                                            )}{" "}
-                                                                            {
-                                                                                fund.currency
-                                                                            }
-                                                                        </td>
-                                                                        <td className="py-2 px-3 text-right font-bold">
-                                                                            {formatNumber(
-                                                                                summary.totalSellAmountEur
-                                                                            )}{" "}
-                                                                            EUR
-                                                                        </td>
-                                                                        <td className="py-2 px-3 text-right text-muted-foreground">
-                                                                            {
-                                                                                summary
-                                                                                    .sellTransactions
-                                                                                    .length
-                                                                            }
-                                                                        </td>
-                                                                    </tr>
-                                                                    <tr className="border-b border-muted-foreground/20">
-                                                                        <td className="py-2 px-3">
-                                                                            Obresti
-                                                                        </td>
-                                                                        <td className="py-2 px-3 text-right font-bold">
-                                                                            {formatNumber(
-                                                                                summary.totalInterestAmount
-                                                                            )}{" "}
-                                                                            {
-                                                                                fund.currency
-                                                                            }
-                                                                        </td>
-                                                                        <td className="py-2 px-3 text-right font-bold">
-                                                                            {formatNumber(
-                                                                                summary.totalInterestAmountEur
-                                                                            )}{" "}
-                                                                            EUR
-                                                                        </td>
-                                                                        <td className="py-2 px-3 text-right text-muted-foreground">
-                                                                            {
-                                                                                fund
-                                                                                    .interest_payments
-                                                                                    .length
-                                                                            }
-                                                                        </td>
-                                                                    </tr>
-                                                                    <tr className="bg-amber-50/50">
-                                                                        <td className="py-2 px-3 font-medium">
-                                                                            Davčna
-                                                                            obveznost
-                                                                            (25%)
-                                                                        </td>
-                                                                        <td className="py-2 px-3 text-right font-bold">
-                                                                            {formatNumber(
-                                                                                taxObligation
-                                                                            )}{" "}
-                                                                            {
-                                                                                fund.currency
-                                                                            }
-                                                                        </td>
-                                                                        <td className="py-2 px-3 text-right font-bold">
-                                                                            {formatNumber(
-                                                                                summary.totalInterestAmountEur *
-                                                                                    0.25
-                                                                            )}{" "}
-                                                                            EUR
-                                                                        </td>
-                                                                        <td className="py-2 px-3 text-right"></td>
-                                                                    </tr>
-                                                                </tbody>
-                                                            </table>
-                                                        </div>
+                                                    <div className="space-y-3">
+                                                        {/* Sells and Buys section */}
+                                                        {sellCount > 0 && (
+                                                            <>
+                                                                <div className="flex justify-between items-center py-2 border-b">
+                                                                    <span>
+                                                                        Prodaje (
+                                                                        {sellCount}{" "}
+                                                                        {sellCount ===
+                                                                        1
+                                                                            ? "transakcija"
+                                                                            : sellCount ===
+                                                                                2
+                                                                              ? "transakciji"
+                                                                              : sellCount <=
+                                                                                  4
+                                                                                ? "transakcije"
+                                                                                : "transakcij"}
+                                                                        )
+                                                                    </span>
+                                                                    <span className="font-bold">
+                                                                        {formatNumber(
+                                                                            sellValueEur
+                                                                        )}{" "}
+                                                                        EUR
+                                                                    </span>
+                                                                </div>
+                                                                <div className="flex justify-between items-center py-2 border-b">
+                                                                    <span>
+                                                                        Nabavna
+                                                                        vrednost (
+                                                                        {buyCount}{" "}
+                                                                        {buyCount ===
+                                                                        1
+                                                                            ? "nakup"
+                                                                            : buyCount ===
+                                                                                2
+                                                                              ? "nakupa"
+                                                                              : buyCount <=
+                                                                                  4
+                                                                                ? "nakupi"
+                                                                                : "nakupov"}
+                                                                        )
+                                                                    </span>
+                                                                    <span className="font-bold">
+                                                                        {formatNumber(
+                                                                            buyValueEur
+                                                                        )}{" "}
+                                                                        EUR
+                                                                    </span>
+                                                                </div>
+                                                            </>
+                                                        )}
+
+                                                        {/* Interest section */}
+                                                        {interestCount > 0 && (
+                                                            <>
+                                                                <div className="flex justify-between items-center py-2 border-b">
+                                                                    <span>
+                                                                        Skupne
+                                                                        obresti (
+                                                                        {
+                                                                            interestCount
+                                                                        }{" "}
+                                                                        {interestCount ===
+                                                                        1
+                                                                            ? "izplačilo"
+                                                                            : interestCount ===
+                                                                                2
+                                                                              ? "izplačili"
+                                                                              : interestCount <=
+                                                                                  4
+                                                                                ? "izplačila"
+                                                                                : "izplačil"}
+                                                                        )
+                                                                    </span>
+                                                                    <span className="font-bold">
+                                                                        {formatNumber(
+                                                                            totalInterestEur
+                                                                        )}{" "}
+                                                                        EUR
+                                                                    </span>
+                                                                </div>
+                                                                <div className="flex justify-between items-center py-2 bg-amber-50 px-3 rounded-md">
+                                                                    <span className="font-medium">
+                                                                        Predvidena
+                                                                        davčna
+                                                                        obveznost
+                                                                        (25%)
+                                                                    </span>
+                                                                    <span className="font-bold text-amber-800">
+                                                                        {formatNumber(
+                                                                            taxObligation
+                                                                        )}{" "}
+                                                                        EUR
+                                                                    </span>
+                                                                </div>
+                                                            </>
+                                                        )}
                                                     </div>
                                                 )
-                                            })}
+                                            })()}
                                         </div>
                                     )}
 

@@ -1,4 +1,5 @@
-import { FundTransactions } from "./revolut-parser"
+import { FundTransactions, Order } from "./revolut-parser"
+import { MatchedSell, getConsumedBuysForYear } from "./cost-basis"
 
 /**
  * Formats a number for XML output with 2 decimal places
@@ -82,6 +83,198 @@ ${rowsXml}
         <InventoryListType>PLVP</InventoryListType>
 ${securitiesXml}
       </KDVPItem>`
+}
+
+/**
+ * Represents a row for XML generation - either a BUY or SELL with tracking info
+ */
+interface XmlRow {
+    type: "BUY" | "SELL"
+    date: Date
+    quantity: number // in EUR
+    pricePerUnit: number
+}
+
+/**
+ * Creates a single KDVPItem XML element from matched transactions.
+ * This version uses FIFO-matched data to ensure proper cost basis tracking.
+ *
+ * For BUY orders (from matched purchases):
+ *   - F1: acquisition date (YYYY-MM-DD)
+ *   - F2: "B"
+ *   - F3: quantity (EUR value)
+ *   - F4: unit price "1.00"
+ *
+ * For SELL orders:
+ *   - F6: sale date (YYYY-MM-DD)
+ *   - F7: quantity (EUR value)
+ *   - F9: unit price "1.00"
+ *   - F10: false
+ *
+ * @param matchedSells Matched sells for this fund in the tax year
+ * @param isin Optional ISIN for the fund
+ * @returns The XML string for a single KDVPItem.
+ */
+function createKDVPItemFromMatches(
+    matchedSells: MatchedSell[],
+    isin?: string
+): string {
+    if (matchedSells.length === 0) {
+        return ""
+    }
+
+    // Get all consumed BUYs for this tax year
+    const consumedBuys = getConsumedBuysForYear(matchedSells)
+
+    // Build chronological list of rows for XML
+    const rows: XmlRow[] = []
+
+    // Add BUY rows (the purchases that cover the sells)
+    for (const { buy, totalQuantityUsed } of consumedBuys) {
+        rows.push({
+            type: "BUY",
+            date: buy.date,
+            quantity: totalQuantityUsed * buy.pricePerUnitInEur,
+            pricePerUnit: 1,
+        })
+    }
+
+    // Add SELL rows
+    for (const matchedSell of matchedSells) {
+        const sellQuantityEur =
+            matchedSell.sell.quantity * matchedSell.sell.pricePerUnitInEur
+        rows.push({
+            type: "SELL",
+            date: matchedSell.sell.date,
+            quantity: sellQuantityEur,
+            pricePerUnit: 1,
+        })
+    }
+
+    // Sort all rows by date
+    rows.sort((a, b) => a.date.getTime() - b.date.getTime())
+
+    // Generate XML rows
+    let rowId = 1
+    const rowLines: string[] = []
+
+    for (const row of rows) {
+        const dateStr = row.date.toISOString().split("T")[0]
+        const formattedQuantity = formatNumberForXML(row.quantity)
+
+        if (row.type === "BUY") {
+            rowLines.push(
+                `          <Row>
+            <ID>${rowId++}</ID>
+            <Purchase>
+              <F1>${dateStr}</F1>
+              <F2>B</F2>
+              <F3>${formattedQuantity}</F3>
+              <F4>1.00</F4>
+            </Purchase>
+          </Row>`
+            )
+        } else {
+            rowLines.push(
+                `          <Row>
+            <ID>${rowId++}</ID>
+            <Sale>
+              <F6>${dateStr}</F6>
+              <F7>${formattedQuantity}</F7>
+              <F9>1.00</F9>
+              <F10>false</F10>
+            </Sale>
+          </Row>`
+            )
+        }
+    }
+
+    const rowsXml = rowLines.join("\n")
+
+    // Build the Securities element wrapping the rows.
+    const securitiesXml = `        <Securities>
+          ${isin ? `<ISIN>${isin}</ISIN>` : ""}
+          <IsFond>false</IsFond>
+${rowsXml}
+        </Securities>`
+
+    // Return the complete KDVPItem element.
+    return `      <KDVPItem>
+        <InventoryListType>PLVP</InventoryListType>
+${securitiesXml}
+      </KDVPItem>`
+}
+
+/**
+ * Generates a full Doh_KDVP XML document from FIFO-matched transactions.
+ *
+ * @param matchesByFund Map of fund currency to matched sells for that fund
+ * @param fundInfo Map of fund currency to fund info (ISIN, etc)
+ * @param year Reporting year
+ * @param taxNumber Taxpayer's tax number
+ * @returns The full XML document as a string
+ */
+export function generateDohKDVPFromMatches(
+    matchesByFund: Map<string, MatchedSell[]>,
+    fundInfo: Map<string, { isin?: string }>,
+    year: number,
+    taxNumber: string
+): string {
+    const kdvpItems: string[] = []
+
+    Array.from(matchesByFund.entries()).forEach(([currency, matchedSells]) => {
+        if (matchedSells.length === 0) return
+        const info = fundInfo.get(currency)
+        const itemXml = createKDVPItemFromMatches(matchedSells, info?.isin)
+        if (itemXml) {
+            kdvpItems.push(itemXml)
+        }
+    })
+
+    if (kdvpItems.length === 0) {
+        return ""
+    }
+
+    const kdvpItemsXml = kdvpItems.join("\n")
+
+    // Build the KDVP header
+    const kdvpHeaderXml = `      <KDVP>
+        <DocumentWorkflowID>O</DocumentWorkflowID>
+        <Year>${year}</Year>
+        <PeriodStart>${year}-01-01</PeriodStart>
+        <PeriodEnd>${year}-12-31</PeriodEnd>
+        <IsResident>true</IsResident>
+        <SecurityCount>${kdvpItems.length}</SecurityCount>
+        <SecurityShortCount>0</SecurityShortCount>
+        <SecurityWithContractCount>0</SecurityWithContractCount>
+        <SecurityWithContractShortCount>0</SecurityWithContractShortCount>
+        <ShareCount>0</ShareCount>
+      </KDVP>`
+
+    const dohKdvpXml = `    <Doh_KDVP>
+${kdvpHeaderXml}
+${kdvpItemsXml}
+    </Doh_KDVP>`
+
+    const envelopeXml = `<?xml version="1.0" encoding="utf-8"?>
+<Envelope xmlns="http://edavki.durs.si/Documents/Schemas/Doh_KDVP_9.xsd"
+  xmlns:edp="http://edavki.durs.si/Documents/Schemas/EDP-Common-1.xsd">
+  <edp:Header>
+    <edp:taxpayer>
+      <edp:taxNumber>${taxNumber}</edp:taxNumber>
+      <edp:taxpayerType>FO</edp:taxpayerType>
+    </edp:taxpayer>
+  </edp:Header>
+  <edp:AttachmentList />
+  <edp:Signatures>
+  </edp:Signatures>
+  <body>
+    <edp:bodyContent />
+${dohKdvpXml}
+  </body>
+</Envelope>`
+
+    return envelopeXml
 }
 
 /**
@@ -185,10 +378,14 @@ export function generateTaxOfficeXml(
     taxYear: number,
     taxNumber: string
 ): string {
-    // Calculate total interest in EUR
+    // Calculate total interest in EUR for the tax year only
     let totalInterestInEur = 0
     funds.forEach((fund) => {
         fund.interest_payments.forEach((payment) => {
+            // Only include interest payments from the selected tax year
+            if (payment.date.getFullYear() !== taxYear) {
+                return
+            }
             // Use the provided EUR amount if available; otherwise, if the currency is EUR use the original amount.
             if (payment.quantityInEur !== undefined) {
                 totalInterestInEur += payment.quantityInEur
@@ -249,15 +446,23 @@ export function generateTaxOfficeXml(
 /**
  * Checks which tax forms can be generated based on the transactions
  * @param transactions Array of fund transactions
+ * @param taxYear Optional tax year to filter by
  * @returns Object indicating which forms are available
  */
-export function getAvailableTaxForms(transactions: FundTransactions[]): {
+export function getAvailableTaxForms(
+    transactions: FundTransactions[],
+    taxYear?: number
+): {
     kdvp: boolean
     interest: boolean
 } {
     const hasOrders = transactions.some((fund) => fund.orders.length > 0)
-    const hasInterest = transactions.some(
-        (fund) => fund.interest_payments.length > 0
+
+    // Check for interest in the specific tax year if provided
+    const hasInterest = transactions.some((fund) =>
+        fund.interest_payments.some(
+            (p) => !taxYear || p.date.getFullYear() === taxYear
+        )
     )
 
     return {

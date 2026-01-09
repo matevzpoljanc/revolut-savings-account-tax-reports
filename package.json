@@ -7,7 +7,9 @@
         "build": "next build",
         "export": "next export",
         "start": "next start",
-        "lint": "next lint"
+        "lint": "next lint",
+        "test": "jest",
+        "test:watch": "jest --watch"
     },
     "dependencies": {
         "@hookform/resolvers": "^3.9.0",
@@ -71,7 +73,10 @@
         "zod": "^3.23.8"
     },
     "devDependencies": {
+        "@types/jest": "^30.0.0",
         "@types/papaparse": "^5.3.14",
-        "prettier": "^3.7.4"
+        "jest": "^30.2.0",
+        "prettier": "^3.7.4",
+        "ts-jest": "^29.4.6"
     }
 }

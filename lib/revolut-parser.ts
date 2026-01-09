@@ -312,4 +312,78 @@ export function isValidCSVFile(fileName: string): boolean {
     return fileName.toLowerCase().endsWith(".csv")
 }
 
+/**
+ * Merges transactions from multiple CSV files.
+ * Combines orders by currency/ISIN, deduplicates, and sorts by date.
+ *
+ * @param existing - Previously parsed transactions
+ * @param newData - New transactions to merge in
+ * @returns Merged FundTransactions array
+ */
+export function mergeTransactions(
+    existing: FundTransactions[],
+    newData: FundTransactions[]
+): FundTransactions[] {
+    const merged: FundTransactions[] = [...existing]
+
+    for (const newFund of newData) {
+        // Find existing fund with same currency (and ISIN if available)
+        let existingFund = merged.find(
+            (f) =>
+                f.currency === newFund.currency &&
+                ((!f.isin && !newFund.isin) || f.isin === newFund.isin)
+        )
+
+        if (!existingFund) {
+            // No matching fund found, add as new
+            merged.push({
+                currency: newFund.currency,
+                isin: newFund.isin,
+                orders: [...newFund.orders],
+                interest_payments: [...newFund.interest_payments],
+            })
+        } else {
+            // Merge orders, deduplicating by date + type + quantity
+            for (const order of newFund.orders) {
+                const isDuplicate = existingFund.orders.some(
+                    (o) =>
+                        o.date.getTime() === order.date.getTime() &&
+                        o.type === order.type &&
+                        Math.abs(o.quantity - order.quantity) < 0.001
+                )
+                if (!isDuplicate) {
+                    existingFund.orders.push(order)
+                }
+            }
+
+            // Merge interest payments, deduplicating by date + amount
+            for (const payment of newFund.interest_payments) {
+                const isDuplicate = existingFund.interest_payments.some(
+                    (p) =>
+                        p.date.getTime() === payment.date.getTime() &&
+                        Math.abs(p.amount - payment.amount) < 0.001
+                )
+                if (!isDuplicate) {
+                    existingFund.interest_payments.push(payment)
+                }
+            }
+
+            // Update ISIN if not set
+            if (!existingFund.isin && newFund.isin) {
+                existingFund.isin = newFund.isin
+            }
+        }
+    }
+
+    // Sort orders by date within each fund
+    for (const fund of merged) {
+        fund.orders.sort((a, b) => a.date.getTime() - b.date.getTime())
+        fund.interest_payments.sort(
+            (a, b) => a.date.getTime() - b.date.getTime()
+        )
+    }
+
+    return merged
+}
+
 export type { Order, InterestPayment, FundTransactions, ConversionRateRow }

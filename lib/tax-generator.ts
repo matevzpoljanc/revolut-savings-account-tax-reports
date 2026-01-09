@@ -1,11 +1,11 @@
-import { FundTransactions } from './revolut-parser';
+import { FundTransactions } from "./revolut-parser"
 
 /**
  * Formats a number for XML output with 2 decimal places
  */
 export function formatNumberForXML(value: number): string {
-  // Format with 2 decimal places and use period as decimal separator
-  return value.toFixed(2);
+    // Format with 2 decimal places and use period as decimal separator
+    return value.toFixed(2)
 }
 
 /**
@@ -28,20 +28,22 @@ export function formatNumberForXML(value: number): string {
  * @returns The XML string for a single KDVPItem.
  */
 function createKDVPItem(fund: FundTransactions): string {
-  let rowId = 1;
-  const rowLines: string[] = [];
+    let rowId = 1
+    const rowLines: string[] = []
 
-  fund.orders.forEach((order) => {
-    // Format the date as YYYY-MM-DD
-    const dateStr = order.date.toISOString().split('T')[0];
-    // Calculate the EUR value using quantity and pricePerUnitInEur
-    const formattedPricePerUnit = formatNumberForXML(Math.abs(order.pricePerUnitInEur));
-    // Format the quantity with 2 decimal places
-    const formattedQuantity = formatNumberForXML(Math.abs(order.quantity));
+    fund.orders.forEach((order) => {
+        // Format the date as YYYY-MM-DD
+        const dateStr = order.date.toISOString().split("T")[0]
+        // Calculate the EUR value using quantity and pricePerUnitInEur
+        const formattedPricePerUnit = formatNumberForXML(
+            Math.abs(order.pricePerUnitInEur)
+        )
+        // Format the quantity with 2 decimal places
+        const formattedQuantity = formatNumberForXML(Math.abs(order.quantity))
 
-    if (order.type === "BUY") {
-      rowLines.push(
-`          <Row>
+        if (order.type === "BUY") {
+            rowLines.push(
+                `          <Row>
             <ID>${rowId++}</ID>
             <Purchase>
               <F1>${dateStr}</F1>
@@ -50,10 +52,10 @@ function createKDVPItem(fund: FundTransactions): string {
               <F4>${formattedPricePerUnit}</F4>
             </Purchase>
           </Row>`
-      );
-    } else if (order.type === "SELL") {
-      rowLines.push(
-`          <Row>
+            )
+        } else if (order.type === "SELL") {
+            rowLines.push(
+                `          <Row>
             <ID>${rowId++}</ID>
             <Sale>
               <F6>${dateStr}</F6>
@@ -62,25 +64,24 @@ function createKDVPItem(fund: FundTransactions): string {
               <F10>false</F10>
             </Sale>
           </Row>`
-      );
-    }
-  });
+            )
+        }
+    })
 
-  const rowsXml = rowLines.join('\n');
+    const rowsXml = rowLines.join("\n")
 
-  // Build the Securities element wrapping the rows.
-  const securitiesXml = 
-`        <Securities>
-          ${fund.isin ? `<ISIN>${fund.isin}</ISIN>` : ''}
+    // Build the Securities element wrapping the rows.
+    const securitiesXml = `        <Securities>
+          ${fund.isin ? `<ISIN>${fund.isin}</ISIN>` : ""}
           <IsFond>false</IsFond>
 ${rowsXml}
-        </Securities>`;
+        </Securities>`
 
-  // Return the complete KDVPItem element.
-  return `      <KDVPItem>
+    // Return the complete KDVPItem element.
+    return `      <KDVPItem>
         <InventoryListType>PLVP</InventoryListType>
 ${securitiesXml}
-      </KDVPItem>`;
+      </KDVPItem>`
 }
 
 /**
@@ -117,20 +118,20 @@ ${securitiesXml}
  * @returns The full XML document as a string.
  */
 export function generateFullDohKDVPXML(
-  transactionsArray: FundTransactions[],
-  year: number,
-  taxNumber: string
+    transactionsArray: FundTransactions[],
+    year: number,
+    taxNumber: string
 ): string {
-  // Filter out funds with no orders
-  const fundsWithOrders = transactionsArray.filter(fund => fund.orders.length > 0);
-  
-  // Create a KDVPItem for each FundTransactions.
-  const kdvpItemsXml = fundsWithOrders
-    .map(createKDVPItem)
-    .join('\n');
+    // Filter out funds with no orders
+    const fundsWithOrders = transactionsArray.filter(
+        (fund) => fund.orders.length > 0
+    )
 
-  // Build the KDVP header using the provided reporting year.
-  const kdvpHeaderXml = `      <KDVP>
+    // Create a KDVPItem for each FundTransactions.
+    const kdvpItemsXml = fundsWithOrders.map(createKDVPItem).join("\n")
+
+    // Build the KDVP header using the provided reporting year.
+    const kdvpHeaderXml = `      <KDVP>
         <DocumentWorkflowID>O</DocumentWorkflowID>
         <Year>${year}</Year>
         <PeriodStart>${year}-01-01</PeriodStart>
@@ -141,16 +142,16 @@ export function generateFullDohKDVPXML(
         <SecurityWithContractCount>0</SecurityWithContractCount>
         <SecurityWithContractShortCount>0</SecurityWithContractShortCount>
         <ShareCount>0</ShareCount>
-      </KDVP>`;
+      </KDVP>`
 
-  // Combine the header and KDVPItem elements into the Doh_KDVP element.
-  const dohKdvpXml = `    <Doh_KDVP>
+    // Combine the header and KDVPItem elements into the Doh_KDVP element.
+    const dohKdvpXml = `    <Doh_KDVP>
 ${kdvpHeaderXml}
 ${kdvpItemsXml}
-    </Doh_KDVP>`;
+    </Doh_KDVP>`
 
-  // Build the full Envelope document.
-  const envelopeXml = `<?xml version="1.0" encoding="utf-8"?>
+    // Build the full Envelope document.
+    const envelopeXml = `<?xml version="1.0" encoding="utf-8"?>
 <Envelope xmlns="http://edavki.durs.si/Documents/Schemas/Doh_KDVP_9.xsd"
   xmlns:edp="http://edavki.durs.si/Documents/Schemas/EDP-Common-1.xsd">
   <edp:Header>
@@ -166,9 +167,9 @@ ${kdvpItemsXml}
     <edp:bodyContent />
 ${dohKdvpXml}
   </body>
-</Envelope>`;
+</Envelope>`
 
-  return envelopeXml;
+    return envelopeXml
 }
 
 /**
@@ -180,29 +181,29 @@ ${dohKdvpXml}
  * @returns A string containing the XML document.
  */
 export function generateTaxOfficeXml(
-  funds: FundTransactions[],
-  taxYear: number,
-  taxNumber: string
+    funds: FundTransactions[],
+    taxYear: number,
+    taxNumber: string
 ): string {
-  // Calculate total interest in EUR
-  let totalInterestInEur = 0;
-  funds.forEach(fund => {
-    fund.interest_payments.forEach(payment => {
-      // Use the provided EUR amount if available; otherwise, if the currency is EUR use the original amount.
-      if (payment.quantityInEur !== undefined) {
-        totalInterestInEur += payment.quantityInEur;
-      } else if (payment.currency === "EUR") {
-        totalInterestInEur += payment.amount;
-      }
-      // If conversion for non-EUR amounts is needed, add your conversion logic here.
-    });
-  });
+    // Calculate total interest in EUR
+    let totalInterestInEur = 0
+    funds.forEach((fund) => {
+        fund.interest_payments.forEach((payment) => {
+            // Use the provided EUR amount if available; otherwise, if the currency is EUR use the original amount.
+            if (payment.quantityInEur !== undefined) {
+                totalInterestInEur += payment.quantityInEur
+            } else if (payment.currency === "EUR") {
+                totalInterestInEur += payment.amount
+            }
+            // If conversion for non-EUR amounts is needed, add your conversion logic here.
+        })
+    })
 
-  // Format the total to two decimal places
-  const formattedTotal = formatNumberForXML(totalInterestInEur);
+    // Format the total to two decimal places
+    const formattedTotal = formatNumberForXML(totalInterestInEur)
 
-  // Build the XML string using a template literal.
-  const xml = `<?xml version="1.0" encoding="utf-8"?>
+    // Build the XML string using a template literal.
+    const xml = `<?xml version="1.0" encoding="utf-8"?>
 <Envelope xmlns="http://edavki.durs.si/Documents/Schemas/Doh_Obr_2.xsd"
     xmlns:edp="http://edavki.durs.si/Documents/Schemas/EDP-Common-1.xsd">
     <edp:Header>
@@ -240,39 +241,27 @@ export function generateTaxOfficeXml(
             </Reduction>
         </Doh_Obr>
     </body>
-</Envelope>`;
+</Envelope>`
 
-  return xml;
+    return xml
 }
 
 /**
- * Generates tax XML files for all funds in the transactions array
+ * Checks which tax forms can be generated based on the transactions
  * @param transactions Array of fund transactions
- * @returns Object mapping fund currencies to their XML content
+ * @returns Object indicating which forms are available
  */
-export function generateAllTaxXMLs(transactions: FundTransactions[]): Record<string, string> {
-  const xmlFiles: Record<string, string> = {};
-  
-  // Only generate XML if there are funds with orders to report
-  const fundsWithOrders = transactions.filter(fund => fund.orders.length > 0);
-  const fundsWithInterest = transactions.filter(fund => fund.interest_payments.length > 0);
-  
-  // Fixed tax year to 2024
-  const taxYear = 2024;
-  // Use a placeholder tax number that user will need to replace
-  const taxNumber = "12345678";
-  
-  if (fundsWithOrders.length > 0) {
-    // Generate a single XML file containing all funds with orders
-    const kdvpXml = generateFullDohKDVPXML(fundsWithOrders, taxYear, taxNumber);
-    xmlFiles["kdvp"] = kdvpXml;
-  }
-  
-  if (fundsWithInterest.length > 0) {
-    // Generate a tax office XML for interest income
-    const taxOfficeXml = generateTaxOfficeXml(fundsWithInterest, taxYear, taxNumber);
-    xmlFiles["interest"] = taxOfficeXml;
-  }
-  
-  return xmlFiles;
+export function getAvailableTaxForms(transactions: FundTransactions[]): {
+    kdvp: boolean
+    interest: boolean
+} {
+    const hasOrders = transactions.some((fund) => fund.orders.length > 0)
+    const hasInterest = transactions.some(
+        (fund) => fund.interest_payments.length > 0
+    )
+
+    return {
+        kdvp: hasOrders,
+        interest: hasInterest,
+    }
 }

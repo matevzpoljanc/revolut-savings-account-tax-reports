@@ -66,22 +66,22 @@ npm start
 ## How to Use
 
 1. **Export Data from Revolut**
-   - Go to your Revolut profile > Documents & statements > Consolidated statement
-   - Select "Excel" format, "Tax Year" for period, and year 2024
-   - If you use other Revolut services, filter to "Savings & funds" only
-   - Click "Generate" to download the CSV file
+    - Go to your Revolut profile > Documents & statements > Consolidated statement
+    - Select "Excel" format, "Tax Year" for period, and year 2024
+    - If you use other Revolut services, filter to "Savings & funds" only
+    - Click "Generate" to download the CSV file
 
 2. **Generate XML Files**
-   - Upload the CSV file to the web application
-   - Enter your 8-digit Slovenian tax number
-   - Process the file to generate the XML tax forms
-   - Download the generated XML files
+    - Upload the CSV file to the web application
+    - Enter your 8-digit Slovenian tax number
+    - Process the file to generate the XML tax forms
+    - Download the generated XML files
 
 3. **Submit to eDavki**
-   - Go to the eDavki portal
-   - Upload the XML files
-   - Verify the imported data for accuracy before submission
-   - Submit the forms
+    - Go to the eDavki portal
+    - Upload the XML files
+    - Verify the imported data for accuracy before submission
+    - Submit the forms
 
 ## Technologies
 

@@ -157,7 +157,8 @@ export function validateHistory(funds: FundTransactions[]): HistoryValidation {
                 inventory -= order.quantity
 
                 // If inventory goes negative, we have a deficit
-                if (inventory < -0.001) { // Small tolerance for floating point
+                if (inventory < -0.001) {
+                    // Small tolerance for floating point
                     const deficit = Math.abs(inventory)
                     return {
                         isComplete: false,

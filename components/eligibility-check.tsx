@@ -3,10 +3,10 @@
 import { useState } from "react"
 import { Card } from "@/components/ui/card"
 import { Checkbox } from "@/components/ui/checkbox"
-import { Label } from "@/components/ui/label"
 import { Button } from "@/components/ui/button"
 import { FileUpload } from "@/components/file-upload"
-import { AlertCircle, Info } from "lucide-react"
+import { InstructionsAccordion } from "@/components/instructions-accordion"
+import { AlertCircle, MapPin, FileCheck, ChevronRight } from "lucide-react"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 
 interface EligibilityCheckProps {
@@ -27,89 +27,133 @@ export function EligibilityCheck({ taxYear }: EligibilityCheckProps) {
     return (
         <div>
             {!isChecked ? (
-                <Card className="p-6">
-                    <div className="space-y-6">
-                        <div className="text-center">
-                            <h2 className="text-xl font-semibold mb-2">
-                                Je ta stran zame?
-                            </h2>
-                        </div>
+                <div className="max-w-md mx-auto">
+                    <div className="text-center mb-6">
+                        <h2 className="text-2xl font-semibold text-slate-800 mb-2">
+                            Preverite upravičenost
+                        </h2>
+                        <p className="text-slate-500">
+                            Potrdite spodnji izjavi za nadaljevanje
+                        </p>
+                    </div>
 
-                        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4 text-sm text-center">
-                            <div className="flex flex-col items-center justify-center">
-                                <div className="flex items-center space-x-2 mb-1">
-                                    <Info className="h-4 w-4 text-blue-600" />
-                                    <p className="text-blue-800 font-medium">
-                                        Zasebnost:
-                                    </p>
+                    <div className="space-y-3 mb-6">
+                        {/* Resident checkbox card */}
+                        <label
+                            htmlFor="resident"
+                            className={`
+                                relative p-4 rounded-xl border-2 cursor-pointer transition-all duration-200 block
+                                ${
+                                    isResident
+                                        ? "border-blue-500 bg-blue-50/50 shadow-sm"
+                                        : "border-slate-200 bg-white hover:border-slate-300 hover:shadow-sm"
+                                }
+                            `}
+                        >
+                            <div className="flex items-center gap-4">
+                                <div
+                                    className={`
+                                    flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center
+                                    ${isResident ? "bg-blue-100" : "bg-slate-100"}
+                                `}
+                                >
+                                    <MapPin
+                                        className={`h-5 w-5 ${isResident ? "text-blue-600" : "text-slate-400"}`}
+                                    />
                                 </div>
-                                <p className="text-blue-700">
-                                    Vsi podatki se obdelujejo izključno lokalno
-                                    v vašem brskalniku. <br />
-                                    Podatki se ne pošiljajo na strežnik ali
-                                    kakorkoli shranjujejo.
-                                </p>
-                            </div>
-                        </div>
-
-                        <div className="space-y-4">
-                            <div className="flex items-start space-x-2">
+                                <div className="flex-1">
+                                    <span className="text-base font-medium text-slate-700">
+                                        Sem slovenski davčni rezident
+                                    </span>
+                                </div>
                                 <Checkbox
                                     id="resident"
                                     checked={isResident}
                                     onCheckedChange={(checked) =>
                                         setIsResident(checked === true)
                                     }
-                                    className="mt-1"
+                                    className="h-5 w-5"
                                 />
-                                <div className="space-y-1">
-                                    <Label
-                                        htmlFor="resident"
-                                        className="text-base font-medium cursor-pointer"
-                                    >
-                                        Sem slovenski rezident
-                                    </Label>
-                                </div>
                             </div>
+                        </label>
 
-                            <div className="flex items-start space-x-2">
+                        {/* Not submitted checkbox card */}
+                        <label
+                            htmlFor="not-submitted"
+                            className={`
+                                relative p-4 rounded-xl border-2 cursor-pointer transition-all duration-200 block
+                                ${
+                                    notSubmitted
+                                        ? "border-blue-500 bg-blue-50/50 shadow-sm"
+                                        : "border-slate-200 bg-white hover:border-slate-300 hover:shadow-sm"
+                                }
+                            `}
+                        >
+                            <div className="flex items-center gap-4">
+                                <div
+                                    className={`
+                                    flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center
+                                    ${notSubmitted ? "bg-blue-100" : "bg-slate-100"}
+                                `}
+                                >
+                                    <FileCheck
+                                        className={`h-5 w-5 ${notSubmitted ? "text-blue-600" : "text-slate-400"}`}
+                                    />
+                                </div>
+                                <div className="flex-1">
+                                    <span className="text-base font-medium text-slate-700">
+                                        Obrazcev za {taxYear} še nisem oddal(a)
+                                    </span>
+                                </div>
                                 <Checkbox
                                     id="not-submitted"
                                     checked={notSubmitted}
                                     onCheckedChange={(checked) =>
                                         setNotSubmitted(checked === true)
                                     }
-                                    className="mt-1"
+                                    className="h-5 w-5"
                                 />
-                                <div className="space-y-1">
-                                    <Label
-                                        htmlFor="not-submitted"
-                                        className="text-base font-medium cursor-pointer"
-                                    >
-                                        Obrazcev za leto {taxYear} še nisem
-                                        oddal(a)
-                                    </Label>
-                                </div>
                             </div>
+                        </label>
+                    </div>
+
+                    <Button
+                        className="w-full h-12 text-base font-medium bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 shadow-lg shadow-blue-500/25"
+                        onClick={handleCheck}
+                        disabled={!isEligible}
+                    >
+                        Nadaljuj
+                        <ChevronRight className="ml-2 h-5 w-5" />
+                    </Button>
+
+                    {!isEligible && (
+                        <p className="text-sm text-center text-slate-400 mt-4">
+                            Za nadaljevanje potrdite obe izjavi
+                        </p>
+                    )}
+                </div>
+            ) : isEligible ? (
+                <div className="max-w-6xl mx-auto">
+                    {/* Two-column layout on large screens */}
+                    <div className="lg:grid lg:grid-cols-12 lg:gap-8">
+                        {/* Left column - File upload */}
+                        <div className="lg:col-span-8">
+                            <FileUpload taxYear={taxYear} />
                         </div>
 
-                        <Button
-                            className="w-full"
-                            onClick={handleCheck}
-                            disabled={!isEligible}
-                        >
-                            Nadaljuj
-                        </Button>
-
-                        {!isEligible && (
-                            <p className="text-sm text-center text-muted-foreground">
-                                Za nadaljevanje morate potrditi obe izjavi
-                            </p>
-                        )}
+                        {/* Right column - Instructions */}
+                        <aside className="lg:col-span-4 mt-8 lg:mt-0">
+                            <div className="lg:sticky lg:top-8">
+                                <div className="bg-card rounded-xl shadow-sm border border-border/50 p-6">
+                                    <h2 className="text-lg font-semibold mb-4 text-foreground">
+                                        Navodila za uporabo
+                                    </h2>
+                                    <InstructionsAccordion taxYear={taxYear} />
+                                </div>
+                            </div>
+                        </aside>
                     </div>
-                </Card>
-            ) : isEligible ? (
-                <FileUpload taxYear={taxYear} />
+                </div>
             ) : (
                 <Card className="p-6">
                     <Alert variant="destructive" className="mb-4">

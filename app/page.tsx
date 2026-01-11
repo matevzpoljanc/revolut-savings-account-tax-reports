@@ -1,10 +1,9 @@
 "use client"
 
 import { useState } from "react"
-import { FileUpload } from "@/components/file-upload"
 import { ThemeProvider } from "@/components/theme-provider"
 import { EligibilityCheck } from "@/components/eligibility-check"
-import { InstructionsAccordion } from "@/components/instructions-accordion"
+import { Shield } from "lucide-react"
 import {
     Select,
     SelectContent,
@@ -23,21 +22,32 @@ export default function Home() {
             enableSystem
             disableTransitionOnChange
         >
-            <main className="min-h-screen bg-background">
-                <div className="container mx-auto px-4 py-12">
-                    <div className="max-w-3xl mx-auto">
-                        <h1 className="text-3xl font-bold text-center mb-2">
-                            FURS & Revolut Saving Accounts
+            <div className="min-h-screen flex flex-col bg-gradient-to-b from-blue-50 via-white to-slate-50">
+                {/* Hero Header */}
+                <header className="pt-12 pb-8 lg:pt-16 lg:pb-12">
+                    <div className="container mx-auto px-4 text-center">
+                        <div className="inline-flex items-center gap-2 bg-blue-100 text-blue-700 px-4 py-1.5 rounded-full text-sm font-medium mb-6">
+                            <span className="relative flex h-2 w-2">
+                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+                                <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500"></span>
+                            </span>
+                            Brezplačno orodje za davčno napoved
+                        </div>
+                        <h1 className="text-4xl lg:text-5xl font-bold mb-4 bg-gradient-to-r from-blue-600 via-indigo-600 to-violet-600 bg-clip-text text-transparent">
+                            Revolut Savings Account
                         </h1>
-                        <h2 className="text-xl text-center text-muted-foreground mb-6 flex items-center justify-center gap-2">
-                            Priprava davčnih obrazcev za leto
+                        <p className="text-xl lg:text-2xl text-slate-600 mb-2">
+                            Priprava davčnih obrazcev za FURS
+                        </p>
+                        <div className="flex items-center justify-center gap-2 text-lg text-slate-500">
+                            <span>Davčno leto</span>
                             <Select
                                 value={taxYear.toString()}
                                 onValueChange={(value) =>
                                     setTaxYear(parseInt(value))
                                 }
                             >
-                                <SelectTrigger className="w-24 h-8 text-xl border border-muted-foreground/30 rounded-md px-2 bg-background hover:bg-muted/50 focus:ring-1">
+                                <SelectTrigger className="w-24 h-9 text-lg font-semibold border-2 border-blue-200 rounded-lg px-3 bg-white hover:border-blue-300 focus:ring-2 focus:ring-blue-100">
                                     <SelectValue />
                                 </SelectTrigger>
                                 <SelectContent>
@@ -45,19 +55,33 @@ export default function Home() {
                                     <SelectItem value="2025">2025</SelectItem>
                                 </SelectContent>
                             </Select>
-                        </h2>
-
-                        <EligibilityCheck taxYear={taxYear} />
-
-                        <div className="bg-card rounded-lg shadow-md p-6 mt-8">
-                            <h2 className="text-xl font-semibold mb-4">
-                                Navodila za uporabo
-                            </h2>
-                            <InstructionsAccordion taxYear={taxYear} />
                         </div>
                     </div>
-                </div>
-            </main>
+                </header>
+
+                {/* Main Content */}
+                <main className="flex-1 container mx-auto px-4 pb-12">
+                    <EligibilityCheck taxYear={taxYear} />
+                </main>
+
+                {/* Footer with Privacy Notice */}
+                <footer className="border-t border-slate-200 bg-white/80 backdrop-blur-sm">
+                    <div className="container mx-auto px-4 py-6">
+                        <div className="flex flex-col sm:flex-row items-center justify-center gap-2 text-sm text-slate-500">
+                            <div className="flex items-center gap-2">
+                                <Shield className="h-4 w-4 text-green-600" />
+                                <span className="font-medium text-slate-600">
+                                    Zasebnost:
+                                </span>
+                            </div>
+                            <span>
+                                Vsi podatki se obdelujejo izključno lokalno v
+                                vašem brskalniku. Nič se ne pošilja na strežnik.
+                            </span>
+                        </div>
+                    </div>
+                </footer>
+            </div>
         </ThemeProvider>
     )
 }

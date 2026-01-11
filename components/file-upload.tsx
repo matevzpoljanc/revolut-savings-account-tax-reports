@@ -13,6 +13,8 @@ import {
     Info,
     CheckCircle2,
     HelpCircle,
+    ExternalLink,
+    AlertTriangle,
 } from "lucide-react"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import Papa from "papaparse"
@@ -33,7 +35,6 @@ import {
 import { generateReport, formatNumber } from "@/lib/report-generator"
 import {
     getAvailableTaxForms,
-    generateFullDohKDVPXML,
     generateTaxOfficeXml,
     generateDohKDVPFromMatches,
 } from "@/lib/tax-generator"
@@ -149,7 +150,10 @@ export function FileUpload({ taxYear }: FileUploadProps) {
                         setMatchedSellsByFund(matchesByFund)
                         setUploadedFiles((prev) => [
                             ...prev,
-                            { name: selectedFile.name, size: selectedFile.size },
+                            {
+                                name: selectedFile.name,
+                                size: selectedFile.size,
+                            },
                         ])
                         setFile(selectedFile)
                         setResult(null)
@@ -261,7 +265,7 @@ export function FileUpload({ taxYear }: FileUploadProps) {
 
         // Generate the appropriate XML based on the key
         if (xmlKey === "kdvp") {
-            // Use FIFO-matched generation if we have matched sells
+            // FIFO matching is required by law - only generate if we have matched sells
             if (matchedSellsByFund.size > 0) {
                 // Build fund info map
                 const fundInfo = new Map<string, { isin?: string }>()
@@ -274,19 +278,8 @@ export function FileUpload({ taxYear }: FileUploadProps) {
                     taxYear,
                     taxNumber
                 )
-            } else {
-                // Fallback to old method if no matched sells
-                const fundsWithOrders = parsedData.filter(
-                    (fund) => fund.orders.length > 0
-                )
-                if (fundsWithOrders.length > 0) {
-                    xmlContent = generateFullDohKDVPXML(
-                        fundsWithOrders,
-                        taxYear,
-                        taxNumber
-                    )
-                }
             }
+            // No fallback - if no matched sells, there's nothing to report
         } else if (xmlKey === "interest") {
             const fundsWithInterest = parsedData.filter(
                 (fund) => fund.interest_payments.length > 0
@@ -465,7 +458,11 @@ export function FileUpload({ taxYear }: FileUploadProps) {
                                     }
                                 >
                                     <Upload className="h-4 w-4 mr-2" />
-                                    Dodaj datoteko iz prejšnjega leta
+                                    Dodaj izpisek za leto{" "}
+                                    {historyValidation?.deficit?.sellDate
+                                        ? historyValidation.deficit.sellDate.getFullYear() -
+                                          1
+                                        : taxYear - 1}
                                 </Button>
                             </div>
 
@@ -574,7 +571,8 @@ export function FileUpload({ taxYear }: FileUploadProps) {
                                                             disabled={
                                                                 !isValidTaxNumber(
                                                                     taxNumber
-                                                                )
+                                                                ) ||
+                                                                !historyValidation?.isComplete
                                                             }
                                                         >
                                                             <span className="flex items-center">
@@ -619,30 +617,64 @@ export function FileUpload({ taxYear }: FileUploadProps) {
                                                     )}
                                                 </div>
 
+                                                {/* Link to eDavki import page */}
+                                                <div className="mt-4 pt-4 border-t border-blue-200">
+                                                    <a
+                                                        href="https://edavki.durs.si/EdavkiPortal/PersonalPortal/CommonPages/Documents/Import.aspx"
+                                                        target="_blank"
+                                                        rel="noopener noreferrer"
+                                                        className="flex items-center justify-center gap-2 w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors"
+                                                    >
+                                                        <ExternalLink className="h-4 w-4" />
+                                                        Odpri eDavki portal za
+                                                        uvoz
+                                                    </a>
+                                                </div>
+
                                                 <div className="mt-3 flex items-start space-x-2 text-sm">
                                                     <Info className="h-4 w-4 text-blue-600 mt-0.5 flex-shrink-0" />
                                                     <p className="text-blue-700">
-                                                        XML datoteke so
-                                                        generirane za davčno
-                                                        leto {taxYear} z vašo
-                                                        davčno številko (
-                                                        {taxNumber}). Te
-                                                        datoteke lahko
-                                                        neposredno uvozite v
-                                                        sistem eDavki. Po uvozu
-                                                        nujno preverite
-                                                        pravilnost podatkov
+                                                        Po uvozu XML datotek na
+                                                        eDavki nujno preverite
+                                                        pravilnost podatkov pred
+                                                        oddajo.
                                                     </p>
                                                 </div>
                                             </div>
                                         )}
 
+                                    {/* Warning about scope */}
+                                    <div className="p-4 bg-amber-50 border border-amber-200 rounded-lg">
+                                        <div className="flex gap-3">
+                                            <AlertTriangle className="h-5 w-5 text-amber-600 flex-shrink-0 mt-0.5" />
+                                            <div className="text-sm text-amber-800">
+                                                <p className="font-medium mb-1">
+                                                    Pomembno
+                                                </p>
+                                                <p>
+                                                    Obrazca Doh-KDVP in Doh-Obr
+                                                    vsebujeta{" "}
+                                                    <strong>
+                                                        samo podatke iz Revolut
+                                                        Savings računa
+                                                    </strong>
+                                                    . Če imate še druge naložbe,
+                                                    ki ste jih dolžni poročati v
+                                                    izbranem davčnem letu
+                                                    (delnice, kripto, druge
+                                                    obresti), jih morate v
+                                                    obrazce dodati ročno.
+                                                </p>
+                                            </div>
+                                        </div>
+                                    </div>
+
                                     {/* Summary section - transactions and interest */}
                                     {parsedData && parsedData.length > 0 && (
                                         <div className="bg-muted p-4 rounded-md">
                                             <h3 className="font-medium mb-3">
-                                                Povzetek za davčno leto {taxYear}
-                                                :
+                                                Povzetek za davčno leto{" "}
+                                                {taxYear}:
                                             </h3>
 
                                             {(() => {
@@ -691,7 +723,8 @@ export function FileUpload({ taxYear }: FileUploadProps) {
                                                                     buyCount++
                                                                     buyValueEur +=
                                                                         match.quantityUsed *
-                                                                        match.buy
+                                                                        match
+                                                                            .buy
                                                                             .pricePerUnitInEur
                                                                 }
                                                             )
@@ -709,8 +742,8 @@ export function FileUpload({ taxYear }: FileUploadProps) {
                                                 if (!hasTransactions) {
                                                     return (
                                                         <p className="text-muted-foreground">
-                                                            Ni transakcij za leto{" "}
-                                                            {taxYear}.
+                                                            Ni transakcij za
+                                                            leto {taxYear}.
                                                         </p>
                                                     )
                                                 }
@@ -722,8 +755,11 @@ export function FileUpload({ taxYear }: FileUploadProps) {
                                                             <>
                                                                 <div className="flex justify-between items-center py-2 border-b">
                                                                     <span>
-                                                                        Prodaje (
-                                                                        {sellCount}{" "}
+                                                                        Prodaje
+                                                                        (
+                                                                        {
+                                                                            sellCount
+                                                                        }{" "}
                                                                         {sellCount ===
                                                                         1
                                                                             ? "transakcija"
@@ -746,8 +782,11 @@ export function FileUpload({ taxYear }: FileUploadProps) {
                                                                 <div className="flex justify-between items-center py-2 border-b">
                                                                     <span>
                                                                         Nabavna
-                                                                        vrednost (
-                                                                        {buyCount}{" "}
+                                                                        vrednost
+                                                                        (
+                                                                        {
+                                                                            buyCount
+                                                                        }{" "}
                                                                         {buyCount ===
                                                                         1
                                                                             ? "nakup"
@@ -776,7 +815,8 @@ export function FileUpload({ taxYear }: FileUploadProps) {
                                                                 <div className="flex justify-between items-center py-2 border-b">
                                                                     <span>
                                                                         Skupne
-                                                                        obresti (
+                                                                        obresti
+                                                                        (
                                                                         {
                                                                             interestCount
                                                                         }{" "}

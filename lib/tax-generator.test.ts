@@ -122,9 +122,7 @@ describe("getAvailableTaxForms", () => {
             createFund(
                 "EUR",
                 [],
-                [
-                    createInterestPayment("2024-03-20", 100, 100),
-                ]
+                [createInterestPayment("2024-03-20", 100, 100)]
             ),
         ]
 
@@ -154,9 +152,7 @@ describe("getAvailableTaxForms", () => {
             createFund(
                 "EUR",
                 [],
-                [
-                    createInterestPayment("2023-03-20", 100, 100),
-                ]
+                [createInterestPayment("2023-03-20", 100, 100)]
             ),
         ]
 
@@ -167,11 +163,7 @@ describe("getAvailableTaxForms", () => {
 
     it("should return kdvp=true when orders exist", () => {
         const funds = [
-            createFund(
-                "EUR",
-                [createOrder("BUY", "2024-01-15", 100)],
-                []
-            ),
+            createFund("EUR", [createOrder("BUY", "2024-01-15", 100)], []),
         ]
 
         const result = getAvailableTaxForms(funds, 2024)

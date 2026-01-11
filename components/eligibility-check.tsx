@@ -39,9 +39,6 @@ export function EligibilityCheck({
                         <h2 className="text-2xl font-semibold text-slate-800 mb-2">
                             Preverite upravičenost
                         </h2>
-                        <p className="text-slate-500">
-                            Potrdite spodnji izjavi za nadaljevanje
-                        </p>
                     </div>
 
                     <div className="space-y-3 mb-6">

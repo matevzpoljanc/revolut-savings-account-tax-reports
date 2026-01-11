@@ -11,9 +11,13 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 
 interface EligibilityCheckProps {
     taxYear: number
+    onEligibilityConfirmed?: () => void
 }
 
-export function EligibilityCheck({ taxYear }: EligibilityCheckProps) {
+export function EligibilityCheck({
+    taxYear,
+    onEligibilityConfirmed,
+}: EligibilityCheckProps) {
     const [isResident, setIsResident] = useState(false)
     const [notSubmitted, setNotSubmitted] = useState(false)
     const [isChecked, setIsChecked] = useState(false)
@@ -22,6 +26,9 @@ export function EligibilityCheck({ taxYear }: EligibilityCheckProps) {
 
     const handleCheck = () => {
         setIsChecked(true)
+        if (isEligible && onEligibilityConfirmed) {
+            onEligibilityConfirmed()
+        }
     }
 
     return (

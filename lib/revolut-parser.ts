@@ -38,9 +38,22 @@ function cleanAmount(value: string): number {
     return parseFloat(value.replace(/[^0-9\.-]+/g, ""))
 }
 
+const SLOVENE_MONTHS: Record<string, string> = {
+    'jan': 'Jan', 'feb': 'Feb', 'mar': 'Mar', 'apr': 'Apr',
+    'maj': 'May', 'jun': 'Jun', 'jul': 'Jul', 'avg': 'Aug',
+    'sep': 'Sep', 'okt': 'Oct', 'nov': 'Nov', 'dec': 'Dec',
+}
+
 function parseDate(dateStr: string): Date {
-    // Convert the date string into a Date object (assumes the string is in a parseable format)
-    return new Date(dateStr.trim())
+    let s = dateStr.trim()
+    // Replace Slovene month abbreviations (e.g. "okt." or "okt") with English
+    s = s.replace(/\b([a-z]{3})\.?\b/gi, (match, month) => {
+        const replacement = SLOVENE_MONTHS[month.toLowerCase()]
+        return replacement ?? match
+    })
+    // Normalize "DD. Mon YYYY" → "DD Mon YYYY"
+    s = s.replace(/(\d+)\.\s+/g, '$1 ')
+    return new Date(s)
 }
 
 function formatDate(date: Date): string {
